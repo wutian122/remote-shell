@@ -1,0 +1,28 @@
+{
+  "audit_log": "audit_remote.log",
+  "ssh": {
+    "port": 22,
+    "timeout": 30,
+    "retry": 3,
+    "shell": "/bin/bash"
+  },
+  "sftp": {
+    "port": 22,
+    "retry": 3,
+    "chunk_size": 8192,
+    "verify_md5": true,
+    "page_size": 100
+  },
+  "telnet": {
+    "port": 23,
+    "timeout": 3.0,
+    "retry": 3,
+    "command_delay": 0.5
+  },
+  "winrm": {
+    "port": 5985,
+    "auth": "ntlm",
+    "transport": "http",
+    "shell_type": "auto"
+  }
+}
