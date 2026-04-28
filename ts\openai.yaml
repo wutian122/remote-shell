@@ -1,0 +1,4 @@
+interface:
+  display_name: "Remote Shell"
+  short_description: "安全的 SSH、SFTP、Telnet、WinRM 远程操作技能"
+  default_prompt: "使用 Remote Shell 选择合适协议并安全执行远程命令、文件传输或连通性检查"
