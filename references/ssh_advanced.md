@@ -81,3 +81,4 @@ python scripts/ssh_execute.py execute -H 192.168.1.100 -u root -k ~/.ssh/id_rsa 
 | 命令超时 | 增大 `--timeout`，检查命令是否需要交互输入 |
 | 文件传输失败 | 检查路径权限、磁盘空间 |
 | MD5 不匹配 | 检查传输过程是否被中断 |
+| `~` 路径无效 | 改用绝对路径；详见 `references/file_transfer_guide.md` |

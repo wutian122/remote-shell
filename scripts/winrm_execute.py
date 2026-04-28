@@ -8,6 +8,7 @@ import sys
 from typing import Any
 
 from common import (
+    configure_stdio,
     dump_json,
     format_error,
     get_config_value,
@@ -16,6 +17,7 @@ from common import (
     load_runtime_config,
     load_script_content,
     split_commands,
+    to_text,
 )
 from exceptions import DependencyUnavailableError, SecurityInterceptedError
 from security_interceptor import enforce_security
@@ -97,8 +99,14 @@ def run_winrm_cmd(session: Any, command: str, shell: str) -> dict[str, Any]:
         return {
             "success": True,
             "exit_status": response.status_code,
-            "stdout": response.std_out.decode("utf-8", errors="replace").strip(),
-            "stderr": response.std_err.decode("utf-8", errors="replace").strip(),
+            "stdout": to_text(
+                response.std_out,
+                extra_encodings=("utf-8", "utf-16-le", "gb18030", "gbk", "cp936"),
+            ).strip(),
+            "stderr": to_text(
+                response.std_err,
+                extra_encodings=("utf-8", "utf-16-le", "gb18030", "gbk", "cp936"),
+            ).strip(),
         }
     except Exception as exc:
         error_type = "WinRMAuthError" if "401" in str(exc) else type(exc).__name__
@@ -323,6 +331,8 @@ def build_parser(config: dict[str, Any]) -> argparse.ArgumentParser:  # pragma: 
 
 def main() -> None:  # pragma: no cover - CLI wrapper
     """CLI 入口。"""
+    configure_stdio()
+
     config = load_runtime_config()
     parser = build_parser(config)
     args = parser.parse_args()

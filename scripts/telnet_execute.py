@@ -11,12 +11,16 @@ from datetime import datetime
 from typing import Any
 
 from common import (
+    configure_stdio,
     dump_json,
     format_error,
     get_config_value,
     get_logger,
     load_runtime_config,
+    read_text_file,
+    safe_print,
     split_commands,
+    to_text,
 )
 from exceptions import DependencyUnavailableError, SecurityInterceptedError
 from security_interceptor import enforce_security
@@ -69,10 +73,17 @@ class TelnetHelper:
         self.detected_prompt: str | None = None
         self.logfile_handle: Any | None = None
         self.prompt_patterns = [prompt_pattern] if prompt_pattern else list(DEFAULT_PROMPT_PATTERNS)
+        self.expect_patterns = [pattern.encode("ascii") for pattern in self.prompt_patterns]
 
         if logfile:
             try:
-                self.logfile_handle = open(logfile, "a", encoding="utf-8", buffering=1)
+                self.logfile_handle = open(
+                    logfile,
+                    "a",
+                    encoding="utf-8",
+                    errors="replace",
+                    buffering=1,
+                )
                 self._log("\n" + "=" * 60 + "\n")
                 self._log(f"Session started: {datetime.now().isoformat()}\n")
                 self._log(f"Target: {host}:{port}\n")
@@ -84,10 +95,13 @@ class TelnetHelper:
         if self.debug:
             LOGGER.info("[DEBUG] %s", message)
 
-    def _log(self, data: str) -> None:
+    def _log(self, data: str | bytes) -> None:
         if self.logfile_handle:
-            self.logfile_handle.write(data)
+            self.logfile_handle.write(to_text(data))
             self.logfile_handle.flush()
+
+    def _merge_output(self, *parts: Any) -> str:
+        return "".join(to_text(part) for part in parts if part)
 
     def connect(self) -> bool:
         """建立 Telnet 连接（带重试）。"""
@@ -99,16 +113,16 @@ class TelnetHelper:
                 self.conn = pexpect.spawn(
                     f"telnet {self.host} {self.port}",
                     timeout=self.timeout,
-                    encoding="utf-8",
+                    encoding=None,
                 )
-                if self.logfile_handle:
-                    self.conn.logfile_read = self.logfile_handle
                 time.sleep(0.5)
                 self.conn.sendline("")
                 time.sleep(0.5)
                 try:
-                    self.conn.expect(self.prompt_patterns, timeout=2.0)
-                    self._detect_prompt(self.conn.before + self.conn.after)
+                    self.conn.expect(self.expect_patterns, timeout=2.0)
+                    prompt_output = self._merge_output(self.conn.before, self.conn.after)
+                    self._log(prompt_output)
+                    self._detect_prompt(prompt_output)
                 except (pexpect.TIMEOUT, pexpect.EOF):
                     pass
                 self._debug_print(f"连接成功，提示符: {self.detected_prompt}")
@@ -181,11 +195,12 @@ class TelnetHelper:
             self.conn.sendline(command)
             time.sleep(0.2)
             index = self.conn.expect(
-                self.prompt_patterns + [pexpect.TIMEOUT, pexpect.EOF],
+                self.expect_patterns + [pexpect.TIMEOUT, pexpect.EOF],
                 timeout=effective_timeout,
             )
-            prompt_found = index < len(self.prompt_patterns)
-            raw = self.conn.before + (self.conn.after if prompt_found else "")
+            prompt_found = index < len(self.expect_patterns)
+            raw = self._merge_output(self.conn.before, self.conn.after if prompt_found else None)
+            self._log(raw)
             output = self._clean_output(raw, command) if clean else raw
             return output, prompt_found
         except Exception as exc:
@@ -209,9 +224,9 @@ class TelnetHelper:
 
     def interactive_mode(self) -> None:
         """交互模式。"""
-        print(f"交互模式 - 连接到 {self.host}:{self.port}")
-        print("输入 exit 或按 Ctrl-C 退出")
-        print("-" * 50)
+        safe_print(f"交互模式 - 连接到 {self.host}:{self.port}")
+        safe_print("输入 exit 或按 Ctrl-C 退出")
+        safe_print("-" * 50)
         try:
             while True:
                 try:
@@ -221,13 +236,13 @@ class TelnetHelper:
                     if not command.strip():
                         continue
                     output, success = self.send_command(command)
-                    print(output)
+                    safe_print(output)
                     if not success:
-                        print("[WARNING] 命令可能超时或失败", file=sys.stderr)
+                        safe_print("[WARNING] 命令可能超时或失败", file=sys.stderr)
                 except EOFError:
                     break
         except KeyboardInterrupt:
-            print("\n退出交互模式...")
+            safe_print("\n退出交互模式...")
 
 
 def build_parser(config: dict[str, Any]) -> argparse.ArgumentParser:  # pragma: no cover - CLI wrapper
@@ -314,6 +329,8 @@ def build_parser(config: dict[str, Any]) -> argparse.ArgumentParser:  # pragma: 
 
 def main() -> None:  # pragma: no cover - CLI wrapper
     """CLI 入口。"""
+    configure_stdio()
+
     config = load_runtime_config()
     parser = build_parser(config)
     args = parser.parse_args()
@@ -388,12 +405,11 @@ def main() -> None:  # pragma: no cover - CLI wrapper
             sys.exit(0 if all(item["success"] for item in results) else 1)
 
         if args.action == "script":
-            with open(args.file, "r", encoding="utf-8") as file_obj:
-                commands = [
-                    line.strip()
-                    for line in file_obj.read().splitlines()
-                    if line.strip() and not line.strip().startswith("#")
-                ]
+            commands = [
+                line.strip()
+                for line in read_text_file(args.file).splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
             for command in commands:
                 enforce_security(command, args.host, "telnet", args.auto_confirm, args.audit_log)
             results = helper.send_commands(commands, delay=args.delay, clean=not args.raw)

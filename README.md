@@ -1,47 +1,98 @@
-# Remote Shell Skill
+# remote-shell（Remote Shell 技能项目副本）
 
-这是一个为 Trae IDE (及其他兼容 AI 代理) 设计的 **Remote Shell** 技能包。它提供了一套安全、统一的远程操作接口，支持 SSH、SFTP、Telnet 和 WinRM 协议。
+本目录是 remote-shell 技能的项目化副本，提供一组可直接运行的脚本，用于对远程主机进行安全的 SSH / SFTP / WinRM / Telnet 操作，包括：命令执行、批量执行、脚本执行、系统信息采集、健康检查、文件上传/下载与目录遍历等。
 
-## 🌟 核心功能
+## 目录结构
 
-- **多协议支持**：
-  - **SSH**：针对 Linux/Unix 系统的命令执行与脚本运行。
-  - **SFTP**：高效的文件上传、下载及目录管理，内置 MD5 校验。
-  - **WinRM**：针对 Windows 远程管理（PowerShell/CMD）。
-  - **Telnet**：针对 IoT、BusyBox 及嵌入式设备的交互式会话。
-- **安全拦截器**：内置危险命令识别与审计日志，防止意外破坏。
-- **配置中心**：支持 JSON 配置文件及环境变量覆盖。
-- **结构化输出**：所有操作均返回标准的 JSON 格式，便于 AI 解析。
+- SKILL.md：技能使用说明（在 Trae/Claude 等环境中作为技能入口文档）
+- scripts/：可执行脚本与公共模块
+- scripts/config/default.json：默认运行配置
+- references/：参数说明、故障排查与参考资料
 
-## 📂 目录结构
+## 运行环境
 
-该项目遵循 `skill-creator` 规范组织：
+- Python 3.10+（建议 3.11+）
+- Windows / Linux / macOS 均可运行（目标主机协议不同，依赖也不同）
 
-- `SKILL.md`：AI 触发与使用的核心指令文件。
-- `agents/`：包含 UI 元数据配置 (`openai.yaml`)。
-- `scripts/`：核心 Python 执行脚本与配置文件。
-- `references/`：进阶使用指南与协议细节文档。
-- `LICENSE`：采用 Apache-2.0 开源许可证。
+## 依赖安装
 
-## 🚀 快速开始
+脚本采用“按需导入”的方式：只有在使用对应能力时才要求安装相应依赖。
 
-### AI 代理使用
-如果你是在 Trae IDE 中使用此技能，AI 代理会自动读取 `SKILL.md` 并根据你的指令选择合适的脚本执行。
+- SSH（命令执行/批量/脚本/系统信息/健康检查）
+  - `pip install asyncssh`
+- WinRM（Windows 远程执行）
+  - `pip install pywinrm`
+- Telnet（含交互/IoT 场景）
+  - `pip install pexpect`
 
-### 手动安装与使用
-1. 克隆仓库：
-   ```bash
-   git clone https://github.com/wutian122/remote-shell.git
-   ```
-2. 安装依赖：
-   根据需要安装 `asyncssh`, `pywinrm`, `pexpect` 等 Python 库。
-3. 执行示例：
-   ```bash
-   python scripts/ssh_execute.py execute -H <host> -u <user> -c "uname -a"
-   ```
+## 快速使用
 
-## 🛡️ 安全说明
-默认情况下，所有修改类操作（如 `rm`, `stop`, `reboot` 等）都会被安全拦截器拦截。如需执行，请确保在命令中追加 `--auto-confirm` 参数（或通过 AI 代理请求用户确认）。
+### SSH
 
-## 📄 许可证
-本项目采用 [Apache-2.0](LICENSE) 许可证开源。
+```bash
+python scripts/ssh_execute.py execute -H <host> -u <user> -c "uname -a"
+python scripts/ssh_execute.py batch -H <host> -u <user> -c "pwd,whoami,ls"
+python scripts/ssh_execute.py script -H <host> -u <user> --script-file <script.sh>
+python scripts/ssh_execute.py sysinfo -H <host> -u <user>
+python scripts/ssh_execute.py health -H <host> -u <user>
+```
+
+### SFTP 文件传输
+
+```bash
+python scripts/file_transfer.py upload -H <host> -u <user> -l <local> -r <remote>
+python scripts/file_transfer.py download -H <host> -u <user> -r <remote> -l <local>
+python scripts/file_transfer.py info -H <host> -u <user> --path <remote-path>
+python scripts/file_transfer.py ls -H <host> -u <user> --path <remote-dir>
+```
+
+### WinRM
+
+```bash
+python scripts/winrm_execute.py execute -H <host> -u <user> -c "Get-Process"
+python scripts/winrm_execute.py batch -H <host> -u <user> -c "hostname,whoami"
+python scripts/winrm_execute.py script -H <host> -u <user> --script-file <script.ps1>
+python scripts/winrm_execute.py sysinfo -H <host> -u <user>
+python scripts/winrm_execute.py health -H <host> -u <user>
+```
+
+### Telnet
+
+```bash
+python scripts/telnet_execute.py execute -H <host> -c "uname -a"
+python scripts/telnet_execute.py batch -H <host> -c "pwd,whoami,ls"
+python scripts/telnet_execute.py script -H <host> -f <commands.txt>
+python scripts/telnet_execute.py interactive -H <host>
+python scripts/telnet_execute.py health -H <host>
+```
+
+## 全编码自适应（本次更新重点）
+
+脚本对远程输出（stdout/stderr）、本地读取的脚本文件/命令文件等，统一采用“多编码候选 + BOM 识别”的自适应解码策略，避免在 Windows/混合编码环境下出现乱码或解码异常。
+
+默认候选编码包含：
+
+- utf-8 / utf-8-sig
+- gb18030 / gbk / cp936
+- utf-16 / utf-16-le / utf-16-be
+- latin-1（兜底）
+
+你也可以通过环境变量扩展候选编码（逗号或分号分隔）：
+
+```bash
+REMOTE_SHELL_EXTRA_ENCODINGS=big5,shift_jis,euc_kr,koi8-r,cp1251
+```
+
+另外，脚本入口会对标准输出进行统一编码配置（Windows 下优先使用 UTF-8 并以 backslashreplace 避免崩溃）。
+
+## 安全机制
+
+- 默认只允许查询类命令；删除、写文件、安装软件、启停服务等属于高风险行为，会被安全拦截。
+- 只有在明确允许的场景下，才应追加 `--auto-confirm` 绕过拦截并执行危险操作。
+- 文件传输会记录审计日志（默认 `audit_remote.log`，可通过 `--audit-log` 自定义）。
+
+## 版本发布
+
+- v0.2.1：修正仓库同步/发布过程中的路径与产物问题（清理误上传的 `__pycache__/*.pyc` 与异常路径条目），并保持全编码自适应能力不变。
+- v0.2.0：全编码自适应能力增强（多编码候选、BOM 识别、环境变量扩展编码、标准输出编码配置），覆盖 SSH/WinRM/Telnet/SFTP 全链路输出与文件读取。
+

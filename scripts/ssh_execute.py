@@ -9,6 +9,7 @@ import sys
 from typing import Any
 
 from common import (
+    configure_stdio,
     dump_json,
     format_error,
     get_config_value,
@@ -287,6 +288,8 @@ def build_parser(config: dict[str, Any]) -> argparse.ArgumentParser:  # pragma: 
 
 def main() -> None:  # pragma: no cover - CLI wrapper
     """CLI 入口。"""
+    configure_stdio()
+
     config = load_runtime_config()
     parser = build_parser(config)
     args = parser.parse_args()
